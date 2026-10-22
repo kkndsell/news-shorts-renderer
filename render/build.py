@@ -28,6 +28,7 @@ def sh(cmd):
 def fail(msg):
     # one line, readable from the GitHub annotations API and the Telegram failure notice
     msg = ' '.join(str(msg).split())
+    msg = re.sub(r'sk-[A-Za-z0-9_*\-]{4,}', 'sk-…(hidden)', msg)  # never echo key fragments
     print('::error::' + msg[:900], flush=True)
     open('error.txt', 'w', encoding='utf-8').write(msg[:900])
     raise SystemExit(1)
