@@ -1,0 +1,63 @@
+name: render-short
+
+on:
+  workflow_dispatch:
+    inputs:
+      payload_b64:
+        description: "Quiz payload JSON, base64 (sent by n8n)"
+        required: true
+      news_id:
+        description: "news_id for the run name"
+        required: false
+        default: ""
+
+run-name: "short ${{ inputs.news_id }}"
+
+concurrency:
+  group: render-short
+  cancel-in-progress: false
+
+jobs:
+  render:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: System packages (ffmpeg, Korean fonts)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg fonts-noto-cjk fonts-dejavu-core
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Playwright Chromium
+        run: |
+          npm init -y >/dev/null
+          npm install --no-audit --no-fund playwright@1.56.0
+          npx playwright install --with-deps chromium
+      - name: Payload
+        env:
+          PAYLOAD_B64: ${{ inputs.payload_b64 }}
+        run: echo "$PAYLOAD_B64" | base64 -d > payload.json && python3 -c "import json;json.load(open('payload.json'))"
+      - name: Build video
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          NODE_PATH: ${{ github.workspace }}/node_modules
+        run: python3 render/build.py payload.json out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: short-${{ inputs.news_id }}
+          path: |
+            out/short.mp4
+            out/meta.json
+          retention-days: 30
+      - name: Send to Telegram for review
+        env:
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+          NEWS_ID: ${{ inputs.news_id }}
+        run: |
+          SECS=$(python3 -c "import json;print(round(json.load(open('out/meta.json'))['seconds']))")
+          curl -sS -f -F chat_id="$TG_CHAT" -F supports_streaming=true \
+            -F caption="[숏폼 검수] 3초 퀴즈 · ${SECS}초 · 기사 ID ${NEWS_ID}" \
+            -F video=@out/short.mp4 "https://api.telegram.org/bot${TG_TOKEN}/sendVideo" > /dev/null

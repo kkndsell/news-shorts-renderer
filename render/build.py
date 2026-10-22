@@ -1,0 +1,104 @@
+"""Builds one '뉴스 뒤의 주식' 3-second quiz short from a JSON payload.
+
+Steps: OpenAI TTS (fixed voice) -> trim + pitch/tempo -> timeline -> frames (Playwright) -> audio mix -> MP4.
+usage: python build.py payload.json out_dir
+env:   OPENAI_API_KEY
+"""
+import json, os, re, subprocess, sys, urllib.request
+
+VOICE = {
+    'model': 'gpt-4o-mini-tts',
+    'voice': 'verse',
+    'pitch': 1.06,   # +6 %
+    'tempo': 1.25,   # x1.25 after the pitch step (about x1.3 overall)
+    'style': '아주 하이톤의 20대 초반 남성 숏폼 크리에이터. 높고 밝은 목소리, 잔뜩 흥분한 말투, 말 속도는 아주 빠르게, 문장 사이 쉼 거의 없이. '
+             '질문은 궁금해 죽겠다는 듯 끌어올리고, 정답 공개는 놀라운 비밀을 폭로하듯. 친구에게 말하듯 자연스러운 반말, 발음은 또렷하게.',
+}
+CLOSING = '댓글로 달아봐'
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def sh(cmd):
+    return subprocess.run(cmd, shell=True, check=True, capture_output=True, text=True).stdout
+
+
+def duration(path):
+    return float(sh(f'ffprobe -v error -show_entries format=duration -of csv=p=0 "{path}"'))
+
+
+def tts(text, out_mp3, clip_id=''):
+    mock = os.environ.get('MOCK_TTS_DIR')  # local test only: reuse saved clips instead of calling the API
+    if mock:
+        import shutil; shutil.copy(os.path.join(mock, clip_id + '.mp3'), out_mp3); return
+    body = json.dumps({'model': VOICE['model'], 'voice': VOICE['voice'], 'input': text,
+                       'instructions': VOICE['style'], 'response_format': 'mp3'}).encode()
+    req = urllib.request.Request('https://api.openai.com/v1/audio/speech', data=body, method='POST', headers={
+        'Authorization': 'Bearer ' + os.environ['OPENAI_API_KEY'], 'Content-Type': 'application/json'})
+    with urllib.request.urlopen(req, timeout=120) as r, open(out_mp3, 'wb') as f:
+        f.write(r.read())
+
+
+def split_caption(text):
+    parts = [p.strip() for p in re.split(r'(?<=[.!?])\s+|,\s+(?=\d번)', text) if p.strip()]
+    return parts or [text]
+
+
+def main():
+    payload, out = json.load(open(sys.argv[1], encoding='utf-8')), sys.argv[2]
+    os.makedirs(out, exist_ok=True)
+    v = payload['voice']
+    if not v['c5'].rstrip(' !.').endswith(CLOSING):
+        raise SystemExit('VOICE_SCRIPT_INVALID: the answer clip must end with "' + CLOSING + '"')
+    d = {}
+    for c in ['c1', 'c2', 'c4', 'c5']:
+        raw, wav = f'{out}/{c}.mp3', f'{out}/{c}.wav'
+        tts(v[c], raw, c)
+        af = ('silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.05,areverse,'
+              'silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.1,areverse,'
+              f"aresample=44100,asetrate={int(44100 * VOICE['pitch'])},aresample=44100,atempo={VOICE['tempo']}")
+        sh(f'ffmpeg -y -loglevel error -i "{raw}" -af "{af}" -ar 44100 -ac 2 "{wav}"')
+        d[c] = duration(wav)
+    # the closing line must really be spoken: a clip far shorter than its text means the voice was cut off
+    if d['c5'] < len(v['c5']) / 14.0:
+        raise SystemExit(f"VOICE_TOO_SHORT: answer clip {d['c5']:.1f}s for {len(v['c5'])} chars; closing line may be missing")
+    T = {'c1': 0.2}
+    T['c2'] = T['c1'] + d['c1'] + 0.12
+    T['o1'] = T['c2']; T['o2'] = T['c2'] + d['c2'] * 0.33; T['o3'] = T['c2'] + d['c2'] * 0.74
+    T['count'] = T['c2'] + d['c2'] + 0.2
+    T['news'] = T['count'] + 3.0
+    T['c4'] = T['news'] + 0.3
+    T['ans'] = max(T['news'] + 10, T['c4'] + d['c4'] + 0.4)
+    T['c5'] = T['ans'] + 0.25
+    T['end'] = max(T['ans'] + 10, T['c5'] + d['c5'] + 1.5)
+    T = {k: round(x, 2) for k, x in T.items()}
+    caps = []
+    for c in ['c1', 'c2', 'c4', 'c5']:
+        parts = split_caption(v[c]); tot = sum(len(p) for p in parts); t = T[c]
+        for p in parts:
+            caps.append([round(t, 2), p]); t += d[c] * len(p) / tot
+    caps.append([T['count'], '3… 2… 1…']); caps.sort(key=lambda x: x[0])
+    T['captions'] = caps
+    # page
+    tpl = open(os.path.join(HERE, 'template.html'), encoding='utf-8').read()
+    inject = ('<script>window.QUIZ=' + json.dumps(payload['quiz'], ensure_ascii=False) + ';window.TL=' +
+              json.dumps(T, ensure_ascii=False) + ';</script>\n<script>\n// window.QUIZ')
+    page = tpl.replace('<script>\n// window.QUIZ', inject, 1)
+    open(f'{out}/page.html', 'w', encoding='utf-8').write(page)
+    sh(f'node "{HERE}/rec.js" "{out}/page.html" {T["end"]} "{out}/frames"')
+    # audio: voice clips at their start times + 3 count beeps
+    sh(f'ffmpeg -y -loglevel error -f lavfi -i "sine=frequency=880:duration=0.12" -af "volume=0.25,afade=t=out:st=0.06:d=0.06" -ar 44100 -ac 2 "{out}/beep.wav"')
+    ins = [(f'{out}/c1.wav', T['c1']), (f'{out}/c2.wav', T['c2']), (f'{out}/beep.wav', T['count']), (f'{out}/beep.wav', T['count'] + 1),
+           (f'{out}/beep.wav', T['count'] + 2), (f'{out}/c4.wav', T['c4']), (f'{out}/c5.wav', T['c5'])]
+    args = ' '.join(f'-i "{p}"' for p, _ in ins)
+    flt = ';'.join(f'[{i}]adelay={int(t * 1000)}|{int(t * 1000)}[a{i}]' for i, (_, t) in enumerate(ins))
+    flt += ';' + ''.join(f'[a{i}]' for i in range(len(ins))) + f'amix=inputs={len(ins)}:normalize=0,apad=whole_dur={T["end"]}[out]'
+    sh(f'ffmpeg -y -loglevel error {args} -filter_complex "{flt}" -map "[out]" -ar 44100 -ac 2 "{out}/mix.wav"')
+    sh(f'ffmpeg -y -loglevel error -framerate 30 -i "{out}/frames/%05d.png" -i "{out}/mix.wav" -c:v libx264 -preset medium -crf 20 '
+       f'-pix_fmt yuv420p -c:a aac -b:a 160k -shortest -movflags +faststart "{out}/short.mp4"')
+    meta = {'news_id': payload.get('news_id', ''), 'seconds': T['end'], 'clips': d, 'timeline': {k: x for k, x in T.items() if k != 'captions'}}
+    json.dump(meta, open(f'{out}/meta.json', 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
+    print(json.dumps(meta, ensure_ascii=False))
+
+
+if __name__ == '__main__':
+    main()
