@@ -4,7 +4,7 @@ Steps: OpenAI TTS (fixed voice) -> trim + pitch/tempo -> timeline -> frames (Pla
 usage: python build.py payload.json out_dir
 env:   OPENAI_API_KEY
 """
-import json, os, re, subprocess, sys, urllib.request
+import json, os, re, subprocess, sys, urllib.error, urllib.request
 
 VOICE = {
     'model': 'gpt-4o-mini-tts',
@@ -19,7 +19,18 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 
 def sh(cmd):
-    return subprocess.run(cmd, shell=True, check=True, capture_output=True, text=True).stdout
+    r = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    if r.returncode != 0:
+        fail('STEP_FAILED: ' + cmd.split()[0] + ' -> ' + (r.stderr or r.stdout).strip()[-600:])
+    return r.stdout
+
+
+def fail(msg):
+    # one line, readable from the GitHub annotations API and the Telegram failure notice
+    msg = ' '.join(str(msg).split())
+    print('::error::' + msg[:900], flush=True)
+    open('error.txt', 'w', encoding='utf-8').write(msg[:900])
+    raise SystemExit(1)
 
 
 def duration(path):
@@ -34,8 +45,13 @@ def tts(text, out_mp3, clip_id=''):
                        'instructions': VOICE['style'], 'response_format': 'mp3'}).encode()
     req = urllib.request.Request('https://api.openai.com/v1/audio/speech', data=body, method='POST', headers={
         'Authorization': 'Bearer ' + os.environ['OPENAI_API_KEY'], 'Content-Type': 'application/json'})
-    with urllib.request.urlopen(req, timeout=120) as r, open(out_mp3, 'wb') as f:
-        f.write(r.read())
+    try:
+        with urllib.request.urlopen(req, timeout=120) as r, open(out_mp3, 'wb') as f:
+            f.write(r.read())
+    except urllib.error.HTTPError as e:
+        fail(f'TTS_HTTP_{e.code} ({clip_id}): ' + e.read().decode('utf-8', 'replace')[:400])
+    except Exception as e:
+        fail(f'TTS_FAILED ({clip_id}): {type(e).__name__} {e}')
 
 
 def split_caption(text):
@@ -48,7 +64,7 @@ def main():
     os.makedirs(out, exist_ok=True)
     v = payload['voice']
     if not v['c5'].rstrip(' !.').endswith(CLOSING):
-        raise SystemExit('VOICE_SCRIPT_INVALID: the answer clip must end with "' + CLOSING + '"')
+        fail('VOICE_SCRIPT_INVALID: the answer clip must end with "' + CLOSING + '"')
     d = {}
     for c in ['c1', 'c2', 'c4', 'c5']:
         raw, wav = f'{out}/{c}.mp3', f'{out}/{c}.wav'
@@ -60,7 +76,7 @@ def main():
         d[c] = duration(wav)
     # the closing line must really be spoken: a clip far shorter than its text means the voice was cut off
     if d['c5'] < len(v['c5']) / 14.0:
-        raise SystemExit(f"VOICE_TOO_SHORT: answer clip {d['c5']:.1f}s for {len(v['c5'])} chars; closing line may be missing")
+        fail(f"VOICE_TOO_SHORT: answer clip {d['c5']:.1f}s for {len(v['c5'])} chars; closing line may be missing")
     T = {'c1': 0.2}
     T['c2'] = T['c1'] + d['c1'] + 0.12
     T['o1'] = T['c2']; T['o2'] = T['c2'] + d['c2'] * 0.33; T['o3'] = T['c2'] + d['c2'] * 0.74
@@ -101,4 +117,9 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except SystemExit:
+        raise
+    except Exception as e:
+        fail(f'BUILD_CRASH: {type(e).__name__} {e}')

@@ -29,7 +29,7 @@ jobs:
           sudo apt-get install -y -qq ffmpeg fonts-noto-cjk fonts-dejavu-core
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
       - name: Playwright Chromium
         run: |
           npm init -y >/dev/null
@@ -61,3 +61,15 @@ jobs:
           curl -sS -f -F chat_id="$TG_CHAT" -F supports_streaming=true \
             -F caption="[숏폼 검수] 3초 퀴즈 · ${SECS}초 · 기사 ID ${NEWS_ID}" \
             -F video=@out/short.mp4 "https://api.telegram.org/bot${TG_TOKEN}/sendVideo" > /dev/null
+      - name: Tell Telegram the render failed
+        if: failure()
+        env:
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+          NEWS_ID: ${{ inputs.news_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          ERR=$(cat error.txt 2>/dev/null || echo "build step failed before the video script started")
+          curl -sS -F chat_id="$TG_CHAT" -F text="[숏폼 실패] 기사 ID ${NEWS_ID}
+          ${ERR}
+          ${RUN_URL}" "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" > /dev/null || true
