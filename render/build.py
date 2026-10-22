@@ -15,6 +15,7 @@ VOICE = {
              '질문은 궁금해 죽겠다는 듯 끌어올리고, 정답 공개는 놀라운 비밀을 폭로하듯. 친구에게 말하듯 자연스러운 반말, 발음은 또렷하게.',
 }
 CLOSING = '댓글로 달아봐'
+OPENING = '역발상으로 보면'
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -64,6 +65,8 @@ def main():
     payload, out = json.load(open(sys.argv[1], encoding='utf-8')), sys.argv[2]
     os.makedirs(out, exist_ok=True)
     v = payload['voice']
+    if not v['c5'].lstrip().startswith(OPENING):
+        fail('VOICE_SCRIPT_INVALID: the answer clip must start with "' + OPENING + '"')
     if not v['c5'].rstrip(' !.').endswith(CLOSING):
         fail('VOICE_SCRIPT_INVALID: the answer clip must end with "' + CLOSING + '"')
     d = {}
@@ -84,9 +87,10 @@ def main():
     T['count'] = T['c2'] + d['c2'] + 0.2
     T['news'] = T['count'] + 3.0
     T['c4'] = T['news'] + 0.3
-    T['ans'] = max(T['news'] + 10, T['c4'] + d['c4'] + 0.4)
-    T['c5'] = T['ans'] + 0.25
-    T['end'] = max(T['ans'] + 10, T['c5'] + d['c5'] + 1.5)
+    # the answer screen and the line '역발상으로 보면 …' start right after the news narration ends (no silent gap)
+    T['ans'] = T['c4'] + d['c4'] + 0.3
+    T['c5'] = T['ans'] + 0.1
+    T['end'] = T['c5'] + d['c5'] + 1.5
     T = {k: round(x, 2) for k, x in T.items()}
     caps = []
     for c in ['c1', 'c2', 'c4', 'c5']:
