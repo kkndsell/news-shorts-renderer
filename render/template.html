@@ -68,7 +68,7 @@ html, body { margin: 0; padding: 0; background: #000; }
     <div class="f-brand">뉴스 뒤의 <b>주식</b> · 3초 퀴즈</div>
     <div class="news" data-in="${T.news}" data-out="${T.ans}"><small>오늘의 뉴스 · ${esc(Q.news.date)}</small><strong>${esc(Q.news.title)}</strong><ul>${Q.news.bullets.map((b) => `<li>${md(b)}</li>`).join('')}</ul><i>출처 ${esc(Q.news.source)}</i></div>
     <div class="q" data-in="0"><small>QUIZ · ${esc(Q.date_label)} 뉴스</small><strong>${esc(Q.question)}</strong></div>
-    <div class="opts">${Q.options.map((o, i) => `<div class="opt${i === 2 ? ' ans' : ''}" data-in="${T['o' + (i + 1)]}"><span class="no">${i + 1}</span><span class="tx"><b>${esc(o.name)}</b><span>${esc(o.sub)}</span></span></div>`).join('')}</div>
+    <div class="opts">${Q.options.map((o, i) => `<div class="opt${i === Q.options.length - 1 ? ' ans' : ''}" data-in="${T['o' + (i + 1)]}"><span class="no">${i + 1}</span><span class="tx"><b>${esc(o.name)}</b><span>${esc(o.sub)}</span></span></div>`).join('')}</div>
     <div class="count" id="cd" data-in="${T.count}" data-out="${T.count + 3}">3</div>
     <div class="why" data-in="${T.ans}"><b>${esc(Q.why.title)}</b>${Q.why.reasons.map((r, i) => `<span class="rs"><em>${circled[i]}</em> ${esc(r)}</span>`).join('')}<span class="r">${esc(Q.why.risk)}</span></div>
     <div class="cap"><span id="cap"></span></div>

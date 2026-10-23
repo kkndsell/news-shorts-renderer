@@ -15,7 +15,7 @@ VOICE = {
              '질문은 궁금해 죽겠다는 듯 끌어올리고, 정답 공개는 놀라운 비밀을 폭로하듯. 친구에게 말하듯 자연스러운 반말, 발음은 또렷하게.',
 }
 CLOSING = '댓글로 달아봐'
-OPENING = '역발상으로 보면'
+OPENING = ('역발상으로 보면', '숨은 연결고리로 보면')
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -66,7 +66,7 @@ def main():
     os.makedirs(out, exist_ok=True)
     v = payload['voice']
     if not v['c5'].lstrip().startswith(OPENING):
-        fail('VOICE_SCRIPT_INVALID: the answer clip must start with "' + OPENING + '"')
+        fail('VOICE_SCRIPT_INVALID: the answer clip must start with ' + ' or '.join(OPENING))
     if not v['c5'].rstrip(' !.').endswith(CLOSING):
         fail('VOICE_SCRIPT_INVALID: the answer clip must end with "' + CLOSING + '"')
     d = {}
