@@ -43,8 +43,14 @@ jobs:
           PY
       - name: System packages (ffmpeg, Korean fonts)
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq ffmpeg fonts-noto-cjk fonts-noto-color-emoji fonts-dejavu-core
+          # the runner's package mirror sometimes stalls: cap each attempt and retry instead of hanging for 20+ minutes
+          APT="-o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20"
+          ok=0
+          for i in 1 2 3; do
+            if timeout 240 sudo apt-get $APT update -qq && timeout 420 sudo apt-get $APT install -y -qq --no-install-recommends ffmpeg fonts-noto-cjk fonts-noto-color-emoji fonts-dejavu-core; then ok=1; break; fi
+            echo "::warning::package install attempt $i stalled or failed, retrying"; sleep 5
+          done
+          [ "$ok" = 1 ] || { echo "::error::system packages could not be installed"; exit 1; }
           python3 -m pip install -q --break-system-packages pillow
       - uses: actions/setup-node@v4
         if: steps.payload.outputs.has_quiz == 'true'
