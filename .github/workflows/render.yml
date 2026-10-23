@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       payload_b64:
-        description: "Quiz payload JSON, base64 (sent by n8n)"
+        description: "Payload JSON, base64 (sent by n8n): news_id, quiz (optional), voice, images, post"
         required: true
       news_id:
         description: "news_id for the run name"
@@ -17,34 +17,66 @@ concurrency:
   group: render-short
   cancel-in-progress: false
 
+permissions:
+  contents: write
+
 jobs:
   render:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+      - name: Payload
+        id: payload
+        env:
+          PAYLOAD_B64: ${{ inputs.payload_b64 }}
+        run: |
+          echo "$PAYLOAD_B64" | base64 -d > payload.json
+          python3 - <<'PY'
+          import json, os, re
+          p = json.load(open('payload.json'))
+          nid = p.get('news_id', '')
+          assert re.fullmatch(r'[A-Za-z0-9._-]{3,80}', nid), 'bad news_id'
+          has_quiz = bool(p.get('quiz')) and bool(p.get('voice'))
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f"news_id={nid}\nhas_quiz={'true' if has_quiz else 'false'}\n")
+          PY
       - name: System packages (ffmpeg, Korean fonts)
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg fonts-noto-cjk fonts-dejavu-core
       - uses: actions/setup-node@v4
+        if: steps.payload.outputs.has_quiz == 'true'
         with:
           node-version: "22"
       - name: Playwright Chromium
+        if: steps.payload.outputs.has_quiz == 'true'
         run: |
           npm init -y >/dev/null
           npm install --no-audit --no-fund playwright@1.56.0
           npx playwright install --with-deps chromium
-      - name: Payload
-        env:
-          PAYLOAD_B64: ${{ inputs.payload_b64 }}
-        run: echo "$PAYLOAD_B64" | base64 -d > payload.json && python3 -c "import json;json.load(open('payload.json'))"
       - name: Build video
+        if: steps.payload.outputs.has_quiz == 'true'
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           NODE_PATH: ${{ github.workspace }}/node_modules
         run: python3 render/build.py payload.json out
+      - name: Publish media to GitHub Pages (public URLs for Instagram, Threads, YouTube)
+        env:
+          NEWS_ID: ${{ steps.payload.outputs.news_id }}
+        run: |
+          git fetch -q origin gh-pages
+          git worktree add -q pages origin/gh-pages
+          mkdir -p "pages/v/$NEWS_ID"
+          python3 render/media.py payload.json out "pages/v/$NEWS_ID"
+          cd pages
+          git config user.name "news-shorts-bot"
+          git config user.email "news-shorts-bot@users.noreply.github.com"
+          git add -A "v/$NEWS_ID"
+          git commit -qm "media $NEWS_ID" || echo "nothing to commit"
+          for i in 1 2 3; do git push -q origin HEAD:gh-pages && break; git pull -q --rebase origin gh-pages; done
       - uses: actions/upload-artifact@v4
+        if: steps.payload.outputs.has_quiz == 'true'
         with:
           name: short-${{ inputs.news_id }}
           path: |
@@ -52,6 +84,7 @@ jobs:
             out/meta.json
           retention-days: 30
       - name: Send to Telegram for review
+        if: steps.payload.outputs.has_quiz == 'true'
         env:
           TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -69,7 +102,7 @@ jobs:
           NEWS_ID: ${{ inputs.news_id }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          ERR=$(cat error.txt 2>/dev/null || echo "build step failed before the video script started")
+          ERR=$(cat error.txt 2>/dev/null || echo "a setup step failed before the video script started")
           curl -sS -F chat_id="$TG_CHAT" -F text="[숏폼 실패] 기사 ID ${NEWS_ID}
           ${ERR}
           ${RUN_URL}" "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" > /dev/null || true
