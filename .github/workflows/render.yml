@@ -41,16 +41,34 @@ jobs:
           with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
               f.write(f"news_id={nid}\nhas_quiz={'true' if has_quiz else 'false'}\n")
           PY
-      - name: System packages (ffmpeg, Korean fonts)
+      - name: Cache ffmpeg and fonts
+        uses: actions/cache@v4
+        with:
+          path: ~/tools
+          key: tools-ffmpeg-noto-v1
+      - name: System tools (ffmpeg, Korean fonts) from GitHub, no apt
         run: |
-          # the runner's package mirror sometimes stalls: cap each attempt and retry instead of hanging for 20+ minutes
-          APT="-o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20"
-          ok=0
-          for i in 1 2 3; do
-            if timeout 240 sudo apt-get $APT update -qq && timeout 420 sudo apt-get $APT install -y -qq --no-install-recommends ffmpeg fonts-noto-cjk fonts-noto-color-emoji fonts-dejavu-core; then ok=1; break; fi
-            echo "::warning::package install attempt $i stalled or failed, retrying"; sleep 5
+          # the Ubuntu package mirror stalls on some days, so nothing here uses apt
+          set -e
+          T="$HOME/tools"; mkdir -p "$T/bin" "$T/fonts"
+          get() { curl -fsSL --retry 4 --retry-delay 3 --connect-timeout 20 --max-time 600 -o "$2" "$1"; }
+          if [ ! -x "$T/bin/ffmpeg" ] || [ ! -x "$T/bin/ffprobe" ]; then
+            get https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz /tmp/ff.tar.xz
+            tar -xJf /tmp/ff.tar.xz -C /tmp
+            cp /tmp/ffmpeg-master-latest-linux64-gpl/bin/ffmpeg /tmp/ffmpeg-master-latest-linux64-gpl/bin/ffprobe "$T/bin/"
+          fi
+          for w in Regular Medium Bold Black; do
+            f="$T/fonts/NotoSansCJK-$w.ttc"
+            [ -s "$f" ] || get "https://raw.githubusercontent.com/notofonts/noto-cjk/main/Sans/OTC/NotoSansCJK-$w.ttc" "$f"
           done
-          [ "$ok" = 1 ] || { echo "::error::system packages could not be installed"; exit 1; }
+          [ -s "$T/fonts/NotoColorEmoji.ttf" ] || get https://raw.githubusercontent.com/googlefonts/noto-emoji/main/fonts/NotoColorEmoji.ttf "$T/fonts/NotoColorEmoji.ttf" || echo "::warning::emoji font not downloaded"
+          sudo mkdir -p /usr/share/fonts/opentype/noto
+          sudo cp "$T"/fonts/* /usr/share/fonts/opentype/noto/
+          fc-cache -f >/dev/null
+          echo "$T/bin" >> "$GITHUB_PATH"
+          "$T/bin/ffmpeg" -version | head -1
+          fc-list | grep -c "Noto Sans CJK" || { echo "::error::Korean font missing"; exit 1; }
+          fc-list | grep -qi "DejaVu Sans Mono" || echo "::warning::DejaVu Sans Mono not on this runner (monospace fallback is used)"
           python3 -m pip install -q --break-system-packages pillow
       - uses: actions/setup-node@v4
         if: steps.payload.outputs.has_quiz == 'true'
@@ -61,7 +79,7 @@ jobs:
         run: |
           npm init -y >/dev/null
           npm install --no-audit --no-fund playwright@1.56.0
-          npx playwright install --with-deps chromium
+          npx playwright install chromium   # no --with-deps: that would use apt; the runner image already has Chromium's libraries
       - name: Build video
         if: steps.payload.outputs.has_quiz == 'true'
         env:
