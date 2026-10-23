@@ -22,17 +22,17 @@ html, body { margin: 0; padding: 0; background: #000; }
 .q { position: absolute; top: 9%; left: 6%; right: 6%; z-index: 3; }
 .q small { font-family: var(--f-data); color: var(--gold); font-size: 3.2cqw; letter-spacing: .08em; }
 .q strong { display: block; font-size: 6.6cqw; font-weight: 900; line-height: 1.28; margin-top: 1.4cqw; text-wrap: balance; }
-.q .hook { display: block; margin-top: 2.2cqw; font-style: normal; font-size: 4.1cqw; font-weight: 700; line-height: 1.4; color: #e9eef6; background: rgba(212, 175, 55, .1); border-left: 1cqw solid var(--gold); border-radius: 0 2cqw 2cqw 0; padding: 1.6cqw 2.8cqw; text-wrap: balance; }
-.q .hook b { color: var(--gold); }
-.opts { position: absolute; top: 37%; left: 6%; right: 6%; display: flex; flex-direction: column; gap: 2.6cqw; z-index: 3; }
-.opt { display: flex; align-items: center; gap: 3cqw; background: var(--navy2); border: .5cqw solid #33496d; border-radius: 3cqw; padding: 2.1cqw 3.4cqw; transition: border-color .4s, background-color .4s, opacity .4s, transform .45s; }
+.q strong b { color: var(--gold); }
+.q strong .hk { display: block; font-size: 5.6cqw; margin-bottom: .6cqw; }
+.opts { position: absolute; top: 33%; left: 6%; right: 6%; display: flex; flex-direction: column; gap: 2.6cqw; z-index: 3; }
+.opt { display: flex; align-items: center; gap: 3cqw; background: var(--navy2); border: .5cqw solid #33496d; border-radius: 3cqw; padding: 2.6cqw 3.4cqw; transition: border-color .4s, background-color .4s, opacity .4s, transform .45s; }
 .opt .no { flex: none; width: 8cqw; height: 8cqw; border-radius: 50%; background: #2a3d5e; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 4.4cqw; }
 .opt .tx b { display: block; font-size: 4.6cqw; line-height: 1.25; }
 .opt .tx span { display: block; font-size: 3.2cqw; color: var(--ink2); }
 .q, .opts { transition: opacity .4s ease, top .45s ease; }
 /* answer screen: drop the situation line and lift the options so the reasons box clears the captions */
-.frame.reveal .q .hook { display: none; }
-.frame.reveal .opts { top: 29%; }
+.frame.reveal .q strong .hk { display: none; }
+.frame.reveal .opts { top: 25%; }
 .frame.newsmode .q, .frame.newsmode .opts { opacity: 0; }
 .frame.reveal .opt { opacity: .4; }
 .frame.reveal .opt.ans { opacity: 1; border-color: var(--gold); background: #2a2210; }
@@ -48,7 +48,7 @@ html, body { margin: 0; padding: 0; background: #000; }
 .news li::before { content: ""; position: absolute; left: 0; top: 2.2cqw; width: 1.6cqw; height: 1.6cqw; border-radius: 50%; background: var(--gold); }
 .news li b { color: var(--gold); }
 .news i { display: block; font-style: normal; font-size: 3cqw; color: var(--ink2); margin-top: 3cqw; }
-.why { position: absolute; top: 59%; left: 6%; right: 6%; z-index: 4; background: rgba(212, 175, 55, .1); border: .4cqw solid rgba(212, 175, 55, .55); border-radius: 3cqw; padding: 2.6cqw 3.4cqw; font-size: 3.6cqw; line-height: 1.45; }
+.why { position: absolute; top: 56%; left: 6%; right: 6%; z-index: 4; background: rgba(212, 175, 55, .1); border: .4cqw solid rgba(212, 175, 55, .55); border-radius: 3cqw; padding: 2.6cqw 3.4cqw; font-size: 3.6cqw; line-height: 1.45; }
 .why b { display: block; color: var(--gold); margin-bottom: 1.2cqw; }
 .why .rs { display: block; font-size: 3.7cqw; line-height: 1.45; }
 .why .rs em { font-style: normal; color: var(--gold); font-weight: 700; margin-right: 1cqw; }
@@ -72,7 +72,7 @@ html, body { margin: 0; padding: 0; background: #000; }
   f.innerHTML = `
     <div class="f-brand">뉴스 뒤의 <b>주식</b> · 3초 퀴즈</div>
     <div class="news" data-in="${T.news}" data-out="${T.ans}"><small>오늘의 뉴스 · ${esc(Q.news.date)}</small><strong>${esc(Q.news.title)}</strong><ul>${Q.news.bullets.map((b) => `<li>${md(b)}</li>`).join('')}</ul><i>출처 ${esc(Q.news.source)}</i></div>
-    <div class="q" data-in="0"><small>QUIZ · ${esc(Q.date_label)} 뉴스</small>${Q.hook ? `<em class="hook">${md(Q.hook)}</em>` : ''}<strong>${esc(Q.question)}</strong></div>
+    <div class="q" data-in="0"><small>QUIZ · ${esc(Q.date_label)} 뉴스</small><strong>${Q.hook ? `<span class="hk">${md(Q.hook)}</span>` : ''}${esc(Q.question)}</strong></div>
     <div class="opts">${Q.options.map((o, i) => `<div class="opt${i === Q.options.length - 1 ? ' ans' : ''}" data-in="${T['o' + (i + 1)]}"><span class="no">${i + 1}</span><span class="tx"><b>${esc(o.name)}</b><span>${esc(o.sub)}</span></span></div>`).join('')}</div>
     <div class="count" id="cd" data-in="${T.count}" data-out="${T.count + 3}">3</div>
     <div class="why" data-in="${T.ans}"><b>${esc(Q.why.title)}</b>${Q.why.reasons.map((r, i) => `<span class="rs"><em>${circled[i]}</em> ${esc(r)}</span>`).join('')}<span class="r">${esc(Q.why.risk)}</span></div>
