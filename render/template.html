@@ -48,6 +48,10 @@ html, body { margin: 0; padding: 0; background: #000; }
 .why .rs { display: block; font-size: 3.7cqw; line-height: 1.45; }
 .why .rs em { font-style: normal; color: var(--gold); font-weight: 700; margin-right: 1cqw; }
 .why .r { display: block; color: var(--risk); font-size: 3.1cqw; margin-top: 1cqw; }
+.cta { position: absolute; left: 5%; right: 5%; bottom: 6%; z-index: 7; text-align: center; background: linear-gradient(180deg, #2a2210, #1a1405); border: .5cqw solid var(--gold); border-radius: 3.4cqw; padding: 2.6cqw 2cqw; box-shadow: 0 1.5cqw 5cqw rgba(0,0,0,.45); }
+.cta b { display: block; color: var(--gold); font-size: 4.5cqw; font-weight: 900; line-height: 1.3; white-space: nowrap; letter-spacing: -0.02em; }
+.cta span { display: block; color: #fff; font-size: 3.8cqw; font-weight: 700; margin-top: 1.2cqw; }
+.cta i { font-style: normal; font-family: "Noto Color Emoji", sans-serif; }
 </style>
 </head>
 <body>
@@ -68,6 +72,7 @@ html, body { margin: 0; padding: 0; background: #000; }
     <div class="count" id="cd" data-in="${T.count}" data-out="${T.count + 3}">3</div>
     <div class="why" data-in="${T.ans}"><b>${esc(Q.why.title)}</b>${Q.why.reasons.map((r, i) => `<span class="rs"><em>${circled[i]}</em> ${esc(r)}</span>`).join('')}<span class="r">${esc(Q.why.risk)}</span></div>
     <div class="cap"><span id="cap"></span></div>
+    <div class="cta" data-in="${T.cta}"><b><i>🔔</i> 뉴스 뒤 숨은 종목, 매일 가장 먼저</b><span>팔로우 · 구독하고 받아보세요</span></div>
     <div class="legal">AI 생성 이미지 · 투자 권유가 아닙니다</div>`;
   const els = Array.from(f.querySelectorAll('[data-in]'));
   const cap = document.getElementById('cap'), cd = document.getElementById('cd');

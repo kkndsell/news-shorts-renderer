@@ -90,14 +90,16 @@ def main():
     # the answer screen and the line '역발상으로 보면 …' start right after the news narration ends (no silent gap)
     T['ans'] = T['c4'] + d['c4'] + 0.3
     T['c5'] = T['ans'] + 0.1
-    T['end'] = T['c5'] + d['c5'] + 1.5
+    # follow / subscribe banner after the last spoken line (on screen only; the voice still ends with the closing line)
+    T['cta'] = T['c5'] + d['c5'] + 0.25
+    T['end'] = T['cta'] + 2.8
     T = {k: round(x, 2) for k, x in T.items()}
     caps = []
     for c in ['c1', 'c2', 'c4', 'c5']:
         parts = split_caption(v[c]); tot = sum(len(p) for p in parts); t = T[c]
         for p in parts:
             caps.append([round(t, 2), p]); t += d[c] * len(p) / tot
-    caps.append([T['count'], '3… 2… 1…']); caps.sort(key=lambda x: x[0])
+    caps.append([T['count'], '3… 2… 1…']); caps.append([T['cta'], '']); caps.sort(key=lambda x: x[0])
     T['captions'] = caps
     # page
     tpl = open(os.path.join(HERE, 'template.html'), encoding='utf-8').read()
