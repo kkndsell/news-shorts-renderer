@@ -47,13 +47,21 @@ def tts(text, out_mp3, clip_id=''):
                        'instructions': VOICE['style'], 'response_format': 'mp3'}).encode()
     req = urllib.request.Request('https://api.openai.com/v1/audio/speech', data=body, method='POST', headers={
         'Authorization': 'Bearer ' + os.environ['OPENAI_API_KEY'], 'Content-Type': 'application/json'})
-    try:
-        with urllib.request.urlopen(req, timeout=120) as r, open(out_mp3, 'wb') as f:
-            f.write(r.read())
-    except urllib.error.HTTPError as e:
-        fail(f'TTS_HTTP_{e.code} ({clip_id}): ' + e.read().decode('utf-8', 'replace')[:400])
-    except Exception as e:
-        fail(f'TTS_FAILED ({clip_id}): {type(e).__name__} {e}')
+    # a short must always come out (user rule 2026-10-24): transient TTS errors are retried before giving up
+    last = ''
+    for attempt in range(4):
+        try:
+            with urllib.request.urlopen(req, timeout=120) as r, open(out_mp3, 'wb') as f:
+                f.write(r.read())
+            return
+        except urllib.error.HTTPError as e:
+            last = f'TTS_HTTP_{e.code} ({clip_id}): ' + e.read().decode('utf-8', 'replace')[:400]
+            if e.code in (400, 401, 403):
+                break
+        except Exception as e:
+            last = f'TTS_FAILED ({clip_id}): {type(e).__name__} {e}'
+        import time; time.sleep(5 * (attempt + 1))
+    fail(last)
 
 
 def split_caption(text):
@@ -65,10 +73,12 @@ def main():
     payload, out = json.load(open(sys.argv[1], encoding='utf-8')), sys.argv[2]
     os.makedirs(out, exist_ok=True)
     v = payload['voice']
+    # fixed lines are repaired, never a reason to drop the short (user rule 2026-10-24)
     if not v['c5'].lstrip().startswith(OPENING):
-        fail('VOICE_SCRIPT_INVALID: the answer clip must start with ' + ' or '.join(OPENING))
+        print('::warning::answer clip did not start with the opening line; added', flush=True)
+        v['c5'] = OPENING[0] + '! ' + v['c5'].strip()
     if not v['c5'].rstrip(' !.').endswith(CLOSING):
-        fail('VOICE_SCRIPT_INVALID: the answer clip must end with "' + CLOSING + '"')
+        v['c5'] = v['c5'].rstrip() + ' 너의 생각은 어때? 댓글로 달아봐!'
     d = {}
     for c in ['c1', 'c2', 'c4', 'c5']:
         raw, wav = f'{out}/{c}.mp3', f'{out}/{c}.wav'
@@ -80,7 +90,11 @@ def main():
         d[c] = duration(wav)
     # the closing line must really be spoken: a clip far shorter than its text means the voice was cut off
     if d['c5'] < len(v['c5']) / 14.0:
-        fail(f"VOICE_TOO_SHORT: answer clip {d['c5']:.1f}s for {len(v['c5'])} chars; closing line may be missing")
+        tts(v['c5'], f'{out}/c5.mp3', 'c5')
+        sh(f'ffmpeg -y -loglevel error -i "{out}/c5.mp3" -af "{af}" -ar 44100 -ac 2 "{out}/c5.wav"')
+        d['c5'] = duration(f'{out}/c5.wav')
+        if d['c5'] < len(v['c5']) / 14.0:
+            print(f"::warning::VOICE_SHORT: answer clip {d['c5']:.1f}s for {len(v['c5'])} chars; kept so the short still goes out", flush=True)
     T = {'c1': 0.2}
     T['c2'] = T['c1'] + d['c1'] + 0.12
     T['o1'] = T['c2']; T['o2'] = T['c2'] + d['c2'] * 0.33; T['o3'] = T['c2'] + d['c2'] * 0.74
@@ -116,8 +130,16 @@ def main():
     flt = ';'.join(f'[{i}]adelay={int(t * 1000)}|{int(t * 1000)}[a{i}]' for i, (_, t) in enumerate(ins))
     flt += ';' + ''.join(f'[a{i}]' for i in range(len(ins))) + f'amix=inputs={len(ins)}:normalize=0,apad=whole_dur={T["end"]}[out]'
     sh(f'ffmpeg -y -loglevel error {args} -filter_complex "{flt}" -map "[out]" -ar 44100 -ac 2 "{out}/mix.wav"')
-    sh(f'ffmpeg -y -loglevel error -framerate 30 -i "{out}/frames/%05d.png" -i "{out}/mix.wav" -c:v libx264 -preset medium -crf 20 '
-       f'-pix_fmt yuv420p -c:a aac -b:a 160k -shortest -movflags +faststart "{out}/short.mp4"')
+    # first screen = the countdown scene (title, all options, big 3), held COVER seconds, so the feed preview shows the full quiz
+    COVER = 0.5
+    frames = sorted(f for f in os.listdir(f'{out}/frames') if f.endswith('.png'))
+    cover = frames[min(len(frames) - 1, int((T['count'] + 0.45) * 30))]
+    import shutil; shutil.copy(f'{out}/frames/{cover}', f'{out}/cover.png')
+    ms = int(COVER * 1000)
+    sh(f'ffmpeg -y -loglevel error -loop 1 -framerate 30 -t {COVER} -i "{out}/cover.png" -framerate 30 -i "{out}/frames/%05d.png" -i "{out}/mix.wav" '
+       f'-filter_complex "[0:v]format=yuv420p[c];[1:v]format=yuv420p[m];[c][m]concat=n=2:v=1:a=0[v];[2:a]adelay={ms}|{ms}[a]" '
+       f'-map "[v]" -map "[a]" -c:v libx264 -preset medium -crf 20 -pix_fmt yuv420p -c:a aac -b:a 160k -movflags +faststart "{out}/short.mp4"')
+    T['end'] = round(T['end'] + COVER, 2)
     meta = {'news_id': payload.get('news_id', ''), 'seconds': T['end'], 'clips': d, 'timeline': {k: x for k, x in T.items() if k != 'captions'}}
     json.dump(meta, open(f'{out}/meta.json', 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
     print(json.dumps(meta, ensure_ascii=False))
