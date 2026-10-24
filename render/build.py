@@ -97,7 +97,8 @@ def main():
             print(f"::warning::VOICE_SHORT: answer clip {d['c5']:.1f}s for {len(v['c5'])} chars; kept so the short still goes out", flush=True)
     T = {'c1': 0.2}
     T['c2'] = T['c1'] + d['c1'] + 0.12
-    T['o1'] = T['c2']; T['o2'] = T['c2'] + d['c2'] * 0.33; T['o3'] = T['c2'] + d['c2'] * 0.74
+    # all options are on screen from the first frame (user request 2026-10-24); the voice reads the title and the options over them
+    T['o1'] = T['o2'] = T['o3'] = 0
     T['count'] = T['c2'] + d['c2'] + 0.2
     T['news'] = T['count'] + 3.0
     T['c4'] = T['news'] + 0.3
