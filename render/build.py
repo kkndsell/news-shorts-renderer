@@ -1,18 +1,20 @@
 """Builds one '뉴스 뒤의 주식' 3-second quiz short from a JSON payload.
 
-Steps: OpenAI TTS (fixed voice) -> trim + pitch/tempo -> timeline -> frames (Playwright) -> audio mix -> MP4.
+Steps: OpenAI TTS (fixed voice) -> trim (no pitch/tempo change) -> timeline -> frames (Playwright) -> audio mix -> MP4.
 usage: python build.py payload.json out_dir
 env:   OPENAI_API_KEY
 """
 import json, os, re, subprocess, sys, urllib.error, urllib.request
 
 VOICE = {
+    # user choice 2026-10-29: sample E3 (cedar, documentary narrator, speed 1.3). The API reads each line in one natural take;
+    # no pitch / tempo processing afterwards (that made the voice sound robotic and broken up).
     'model': 'gpt-4o-mini-tts',
-    'voice': 'verse',
-    'pitch': 1.06,   # +6 %
-    'tempo': 1.25,   # x1.25 after the pitch step (about x1.3 overall)
-    'style': '아주 하이톤의 20대 초반 남성 숏폼 크리에이터. 높고 밝은 목소리, 잔뜩 흥분한 말투, 말 속도는 아주 빠르게, 문장 사이 쉼 거의 없이. '
-             '질문은 궁금해 죽겠다는 듯 끌어올리고, 정답 공개는 놀라운 비밀을 폭로하듯. 친구에게 말하듯 자연스러운 반말, 발음은 또렷하게.',
+    'voice': 'cedar',
+    'speed': 1.3,
+    'style': '한국어 원어민 다큐멘터리 내레이터. 30대 남성, 낮고 부드러운 목소리. 차분하고 신뢰감 있게, 숨은 구조를 하나씩 풀어 설명하듯 말한다. '
+             '쓰인 문장의 말투(반말·존댓말)를 그대로 살려 읽는다. 문장과 문장을 자연스럽게 이어 말하고, 실제 사람처럼 억양을 살린다. '
+             '끊기거나 기계적으로 들리면 안 된다. 말 속도는 숏폼답게 빠르게, 문장 사이 쉬는 시간은 짧게, 발음은 또렷하게. 숫자는 힘을 주어 또박또박.',
 }
 CLOSING = '댓글로 달아봐'
 OPENING = ('역발상으로 보면', '숨은 연결고리로 보면')
@@ -44,7 +46,7 @@ def tts(text, out_mp3, clip_id=''):
     if mock:
         import shutil; shutil.copy(os.path.join(mock, clip_id + '.mp3'), out_mp3); return
     body = json.dumps({'model': VOICE['model'], 'voice': VOICE['voice'], 'input': text,
-                       'instructions': VOICE['style'], 'response_format': 'mp3'}).encode()
+                       'instructions': VOICE['style'], 'speed': VOICE['speed'], 'response_format': 'mp3'}).encode()
     req = urllib.request.Request('https://api.openai.com/v1/audio/speech', data=body, method='POST', headers={
         'Authorization': 'Bearer ' + os.environ['OPENAI_API_KEY'], 'Content-Type': 'application/json'})
     # a short must always come out (user rule 2026-10-24): transient TTS errors are retried before giving up
@@ -85,7 +87,7 @@ def main():
         tts(v[c], raw, c)
         af = ('silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.05,areverse,'
               'silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.1,areverse,'
-              f"aresample=44100,asetrate={int(44100 * VOICE['pitch'])},aresample=44100,atempo={VOICE['tempo']}")
+              'aresample=44100')
         sh(f'ffmpeg -y -loglevel error -i "{raw}" -af "{af}" -ar 44100 -ac 2 "{wav}"')
         d[c] = duration(wav)
     # the closing line must really be spoken: a clip far shorter than its text means the voice was cut off
