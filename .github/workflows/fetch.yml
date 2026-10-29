@@ -1,0 +1,41 @@
+name: fetch-assets
+# Downloads generated media (e.g. AI video clips) into the 'fetch' branch so they can be pulled for editing.
+on:
+  workflow_dispatch:
+    inputs:
+      dir:
+        description: "folder name"
+        required: true
+      urls:
+        description: "space-separated URLs"
+        required: true
+permissions:
+  contents: write
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download
+        env:
+          DIR: ${{ inputs.dir }}
+          URLS: ${{ inputs.urls }}
+        run: |
+          set -e
+          mkdir -p "out/$DIR"; i=0
+          for u in $URLS; do
+            case "$u" in https://*) ;; *) echo "skip $u"; continue;; esac
+            ext="${u##*.}"; ext="${ext%%\?*}"; [ ${#ext} -le 4 ] || ext=bin
+            curl -fsSL --retry 3 -o "out/$DIR/$(printf %02d $i).$ext" "$u"; i=$((i+1))
+          done
+          ls -la "out/$DIR"
+      - name: Push to fetch branch
+        env:
+          DIR: ${{ inputs.dir }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd out
+          git init -q -b fetch
+          git config user.name github-actions; git config user.email actions@github.com
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+          if git fetch -q --depth 1 origin fetch; then git reset -q --soft FETCH_HEAD; fi
+          git add -A; git commit -q -m "fetch $DIR"; git push -q origin HEAD:fetch
