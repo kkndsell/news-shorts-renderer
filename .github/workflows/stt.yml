@@ -53,6 +53,6 @@ jobs:
           git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
           for i in 1 2 3; do
             if git fetch -q --depth 1 origin fetch; then git reset -q FETCH_HEAD; fi
-            git add stt; git commit -q -m "stt ${{ inputs.ids }}" || true
+            for i2 in ${{ inputs.ids }}; do git add "stt/$i2.json"; done; git commit -q -m "stt ${{ inputs.ids }}" || true
             git push -q origin HEAD:fetch && break; sleep 3
           done
