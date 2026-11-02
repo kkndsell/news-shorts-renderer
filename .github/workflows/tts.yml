@@ -67,7 +67,7 @@ jobs:
           git config user.name github-actions; git config user.email actions@github.com
           git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
           for i in 1 2 3; do
-            if git fetch -q --depth 1 origin fetch; then git reset -q --soft FETCH_HEAD; fi
-            git add -A; git commit -q -m "tts ${{ inputs.dir }}" || true
+            if git fetch -q --depth 1 origin fetch; then git reset -q FETCH_HEAD; fi  # mixed: keep other folders in the index
+            git add "tts/${{ inputs.dir }}"; git commit -q -m "tts ${{ inputs.dir }}" || true
             git push -q origin HEAD:fetch && break; sleep 3
           done
