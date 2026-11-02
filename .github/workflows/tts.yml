@@ -1,0 +1,73 @@
+name: tts-lines
+# Reads narration lines aloud with the channel voice (OpenAI gpt-4o-mini-tts, cedar, speed 1.3)
+# and pushes one MP3 per line to the 'fetch' branch under tts/<dir>/, so each subtitle line has its own exact timing.
+on:
+  workflow_dispatch:
+    inputs:
+      dir:
+        description: "folder name, e.g. daily-023"
+        required: true
+      lines_b64:
+        description: "base64 JSON list of {id, text}"
+        required: true
+run-name: "tts ${{ inputs.dir }}"
+concurrency:
+  group: tts-lines
+  cancel-in-progress: false
+permissions:
+  contents: write
+jobs:
+  tts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Read lines aloud
+        env:
+          DIR: ${{ inputs.dir }}
+          LINES_B64: ${{ inputs.lines_b64 }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          mkdir -p "out/tts/$DIR"
+          echo "$LINES_B64" | base64 -d > lines.json
+          python3 - <<'PY'
+          import json, os, re, time, urllib.request, urllib.error
+          d = os.environ['DIR']
+          assert re.fullmatch(r'[A-Za-z0-9._-]{2,60}', d), 'bad dir'
+          style = ('한국어 원어민 다큐멘터리 내레이터. 30대 남성, 낮고 부드러운 목소리. 차분하고 신뢰감 있게, 숨은 이유를 하나씩 풀어 설명하듯 말한다. '
+                   '쓰인 문장의 말투를 그대로 살려 읽는다. 실제 사람처럼 억양을 살리고, 끊기거나 기계적으로 들리면 안 된다. '
+                   '말 속도는 숏폼답게 빠르게, 발음은 또렷하게. 숫자는 힘을 주어 또박또박.')
+          for item in json.load(open('lines.json', encoding='utf-8')):
+              cid = str(item['id']); assert re.fullmatch(r'[A-Za-z0-9_-]{1,40}', cid)
+              body = json.dumps({'model': 'gpt-4o-mini-tts', 'voice': 'cedar', 'input': item['text'],
+                                 'instructions': style, 'speed': 1.3, 'response_format': 'mp3'}).encode()
+              for attempt in range(4):
+                  try:
+                      req = urllib.request.Request('https://api.openai.com/v1/audio/speech', data=body, method='POST', headers={
+                          'Authorization': 'Bearer ' + os.environ['OPENAI_API_KEY'], 'Content-Type': 'application/json'})
+                      with urllib.request.urlopen(req, timeout=120) as r:
+                          open(f'out/tts/{d}/{cid}.mp3', 'wb').write(r.read())
+                      break
+                  except urllib.error.HTTPError as e:
+                      print('HTTP', e.code, e.read()[:300]);
+                      if e.code in (400, 401, 403): raise
+                  except Exception as e:
+                      print('retry', cid, e)
+                  time.sleep(5 * (attempt + 1))
+              else:
+                  raise SystemExit('TTS failed for ' + cid)
+          print('done', d)
+          PY
+          ls -la "out/tts/$DIR"
+      - name: Push to fetch branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd out
+          git init -q -b fetch
+          git config user.name github-actions; git config user.email actions@github.com
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+          for i in 1 2 3; do
+            if git fetch -q --depth 1 origin fetch; then git reset -q --soft FETCH_HEAD; fi
+            git add -A; git commit -q -m "tts ${{ inputs.dir }}" || true
+            git push -q origin HEAD:fetch && break; sleep 3
+          done
