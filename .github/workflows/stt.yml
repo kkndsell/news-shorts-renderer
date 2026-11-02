@@ -1,0 +1,58 @@
+name: stt-shorts
+# Transcribes already-published 일상수사대 shorts (Korean, with segment timings) so YouTube caption files can be made for them.
+# Pushes one JSON per video to the 'fetch' branch under stt/<id>.json.
+on:
+  workflow_dispatch:
+    inputs:
+      ids:
+        description: "space-separated post ids, e.g. 001 002"
+        required: true
+run-name: "stt ${{ inputs.ids }}"
+permissions:
+  contents: write
+jobs:
+  stt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Transcribe
+        env:
+          IDS: ${{ inputs.ids }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          mkdir -p out/stt
+          python3 - <<'PY'
+          import json, os, re, time, urllib.request, uuid
+          for pid in os.environ['IDS'].split():
+              assert re.fullmatch(r'\d{3}', pid)
+              url = f'https://kkndsell.github.io/news-shorts-renderer/daily/{pid}/short.mp4'
+              data = urllib.request.urlopen(url, timeout=120).read()
+              b = uuid.uuid4().hex
+              def field(n, v): return f'--{b}\r\nContent-Disposition: form-data; name="{n}"\r\n\r\n{v}\r\n'.encode()
+              body = (field('model', 'whisper-1') + field('language', 'ko') + field('response_format', 'verbose_json') +
+                      field('timestamp_granularities[]', 'segment') + field('timestamp_granularities[]', 'word') +
+                      f'--{b}\r\nContent-Disposition: form-data; name="file"; filename="{pid}.mp4"\r\nContent-Type: video/mp4\r\n\r\n'.encode() + data + f'\r\n--{b}--\r\n'.encode())
+              for attempt in range(4):
+                  try:
+                      req = urllib.request.Request('https://api.openai.com/v1/audio/transcriptions', data=body, method='POST', headers={
+                          'Authorization': 'Bearer ' + os.environ['OPENAI_API_KEY'], 'Content-Type': f'multipart/form-data; boundary={b}'})
+                      out = urllib.request.urlopen(req, timeout=300).read()
+                      open(f'out/stt/{pid}.json', 'wb').write(out); print('ok', pid); break
+                  except Exception as e:
+                      print('retry', pid, e); time.sleep(5 * (attempt + 1))
+              else:
+                  raise SystemExit('failed ' + pid)
+          PY
+      - name: Push to fetch branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd out
+          git init -q -b fetch
+          git config user.name github-actions; git config user.email actions@github.com
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+          for i in 1 2 3; do
+            if git fetch -q --depth 1 origin fetch; then git reset -q FETCH_HEAD; fi
+            git add stt; git commit -q -m "stt ${{ inputs.ids }}" || true
+            git push -q origin HEAD:fetch && break; sleep 3
+          done
