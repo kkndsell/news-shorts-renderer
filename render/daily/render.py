@@ -229,13 +229,15 @@ def build(ep, tts_dir, out, pg):
         if segs[i]['key'] != 'intro' if i < len(segs) else True:
             inputs += f' -loop 1 -framerate {FPS} -t {D:.3f} -i {work}/header.png'
             fc += f';[{last}][{n}]overlay=0:0[v{n}]'; last = f'v{n}'; n += 1
-        if i < len(segs):
+        if i < len(segs) and segs[i]['key'] != 'intro':  # first screen: the big question is on screen, no bottom subtitle box (user 2026-11-02)
             for c in cues:
                 if c['seg'] != i:
                     continue
                 inputs += f' -loop 1 -framerate {FPS} -t {D:.3f} -i {c["png"]}'
                 fc += f';[{last}][{n}]overlay=0:0:enable=\'between(t,{c["a"] - st:.3f},{c["b"] - st - 0.001:.3f})\'[v{n}]'; last = f'v{n}'; n += 1
         p = f'{work}/part{i:02d}.mp4'
+        if os.environ.get('REUSE_PARTS') and i > 0 and os.path.exists(p):
+            parts.append(p); continue
         sh(f'ffmpeg -v error -y {inputs} -filter_complex "{fc}" -map "[{last}]" -frames:v {int(round(en * FPS)) - int(round(st * FPS))} '
            f'-c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p -r {FPS} {p}')
         parts.append(p)
