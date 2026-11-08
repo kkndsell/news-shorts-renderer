@@ -169,6 +169,31 @@ def cover_html(ep):
             f'</body></html>')
 
 
+# 2026-11-08 new first-screen/cover style: familiar object in the middle, no death toll (user: "너무 섬뜩함")
+def _obj_svg(ep):
+    return f'<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="900" viewBox="0 0 1080 900">{DEFS}{scene_svg(ep["obj"], ep)}</svg>'
+
+
+def intro_obj_html(ep):
+    return page_bg(
+        f'<div class="mono" style="position:absolute;left:0;right:0;top:250px;text-align:center;font-size:36px;color:#9aa6ba">MYSTERY {ep["id"]}</div>'
+        f'<div class="serif" style="position:absolute;left:0;right:0;top:320px;text-align:center;font-size:100px;line-height:130px;text-shadow:0 6px 24px rgba(0,0,0,.5)">'
+        f'{esc(ep["q1"])}<br><span style="color:#f0c35a">{esc(ep["q2"])}</span></div>'
+        f'<div style="position:absolute;left:0;top:640px;filter:drop-shadow(0 0 60px rgba(240,195,90,.28))">{_obj_svg(ep)}</div>')
+
+
+def cover_obj_html(ep):
+    return (f'<html><head><style>{BASE_CSS}</style></head><body>'
+            f'<div style="position:absolute;inset:0;background:linear-gradient(180deg,#0a1530 0%,#16295a 50%,#0a1530 100%)"></div><div class="grid"></div>'
+            f'<div class="serif" style="position:absolute;left:0;right:0;top:250px;text-align:center;font-size:112px;line-height:148px;text-shadow:0 6px 24px rgba(0,0,0,.5)">'
+            f'{esc(ep["q1"])}<br><span style="color:#f0c35a">{esc(ep["q2"])}</span></div>'
+            f'<div style="position:absolute;left:0;top:560px;filter:drop-shadow(0 0 70px rgba(240,195,90,.3))">{_obj_svg(ep)}</div>'
+            f'<div style="position:absolute;left:0;right:0;top:1440px;text-align:center;font-size:62px;font-weight:700;color:#f0c35a">{esc(ep.get("cover_sub2", ep["cover_sub"]))}</div>'
+            f'<div style="position:absolute;left:0;right:0;top:1620px;text-align:center"><span style="display:inline-block;padding:18px 54px;border-radius:60px;'
+            f'border:4px solid #f0c35a;color:#f0c35a;font-size:52px;font-weight:900;background:rgba(240,195,90,.12)">일상 수사대</span></div>'
+            f'</body></html>')
+
+
 def shot(pg, htmlsrc, path, transparent=False):
     pg.set_content(htmlsrc)
     pg.wait_for_timeout(60)
@@ -209,12 +234,12 @@ def build(ep, tts_dir, out, pg):
     # 3) frames
     shot(pg, header_html(ep), f'{work}/header.png', True)
     for s in segs:
-        shot(pg, intro_html(ep) if s['key'] == 'intro' else scene_html(ep, s['key'], s['kw']), f'{work}/bg{s["i"]:02d}.png')
+        shot(pg, (intro_obj_html(ep) if ep.get('obj') else intro_html(ep)) if s['key'] == 'intro' else scene_html(ep, s['key'], s['kw']), f'{work}/bg{s["i"]:02d}.png')
     shot(pg, end_html(ep), f'{work}/end.png')
     for k, c in enumerate(cues):
         shot(pg, sub_html(c['lines']), f'{work}/sub{k:02d}.png', True)
         c['png'] = f'{work}/sub{k:02d}.png'
-    shot(pg, cover_html(ep), f'{work}/cover.png')
+    shot(pg, cover_obj_html(ep) if ep.get('obj') else cover_html(ep), f'{work}/cover.png')
     sh(f'ffmpeg -v error -y -i {work}/cover.png -q:v 2 {out}/cover.jpg')
     # 4) video segments: scene i spans from its line start to the next line start (first one from 0)
     parts = []
