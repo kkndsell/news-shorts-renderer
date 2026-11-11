@@ -314,7 +314,8 @@ def scene_svg(key, ep):
              f'<rect x="520" y="140" width="80" height="80" rx="12" fill="{RED}"/><circle cx="700" cy="180" r="40" fill="{SKY}"/><rect x="800" y="150" width="90" height="70" rx="12" fill="{GOLD}"/>'
              + child(300, 800, 1.6, LIGHT) + arrow(300, 520, 300, 300, MID, 12))
     else:
-        raise KeyError(key)
+        from scenes2 import scene2
+        S = scene2(key)
     return S
 
 
