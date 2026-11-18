@@ -333,4 +333,8 @@ def scene2(key):
         out = fn(key)
         if out:
             return out
+    from scenes3 import scene3
+    out = scene3(key)
+    if out:
+        return out
     raise KeyError(key)
