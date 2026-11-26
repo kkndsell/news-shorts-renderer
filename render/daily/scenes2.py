@@ -337,4 +337,8 @@ def scene2(key):
     out = scene3(key)
     if out:
         return out
+    from scenes4 import scene4
+    out = scene4(key)
+    if out:
+        return out
     raise KeyError(key)
